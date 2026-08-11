@@ -6,6 +6,7 @@ from typing import Iterable
 import discord
 
 import tasks_service as svc
+from render import build_unassigned_view
 from storage import get_guild, load_state
 
 log = logging.getLogger("please-handle.announce")
@@ -75,6 +76,54 @@ async def post_outstanding_announce(
         await channel.send(view=build_open_tasks_announce_view(open_count))
 
 
+async def _resolve_channels(
+    bot: discord.Client,
+    channel_ids: Iterable[int],
+) -> list[tuple[int, discord.abc.Messageable]]:
+    out: list[tuple[int, discord.abc.Messageable]] = []
+    for channel_id in channel_ids:
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(channel_id)
+            except discord.HTTPException:
+                log.warning("Could not fetch channel %s", channel_id)
+                continue
+        if not isinstance(channel, discord.abc.Messageable):
+            continue
+        out.append((channel_id, channel))
+    return out
+
+
+async def run_opentasks_for_guild(
+    bot: discord.Client,
+    guild_id: int,
+    *,
+    channel_ids: Iterable[int] | None = None,
+    mark_posted: bool = True,
+) -> int:
+    """Post the unassigned open-tasks list to enabled channels. Returns channels posted."""
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    if channel_ids is None:
+        channel_ids = list(guild["settings"].get("enabled_channel_ids") or [])
+
+    posted = 0
+    for channel_id, channel in await _resolve_channels(bot, channel_ids):
+        try:
+            msg = await channel.send(view=build_unassigned_view(guild_id, offset=0))
+            svc.update_public_list_unassigned_msg(guild_id, channel_id, msg.id)
+            posted += 1
+        except discord.HTTPException as e:
+            log.warning("Failed to post opentasks in %s: %s", channel_id, e)
+
+    if mark_posted and posted:
+        date_str = svc.guild_now(get_guild(load_state(), guild_id)).date().isoformat()
+        svc.mark_opentasks(guild_id, date_str)
+
+    return posted
+
+
 async def run_announce_for_guild(
     bot: discord.Client,
     guild_id: int,
@@ -96,16 +145,7 @@ async def run_announce_for_guild(
         channel_ids = list(guild["settings"].get("enabled_channel_ids") or [])
 
     posted = 0
-    for channel_id in channel_ids:
-        channel = bot.get_channel(channel_id)
-        if channel is None:
-            try:
-                channel = await bot.fetch_channel(channel_id)
-            except discord.HTTPException:
-                log.warning("Could not fetch channel %s", channel_id)
-                continue
-        if not isinstance(channel, discord.abc.Messageable):
-            continue
+    for channel_id, channel in await _resolve_channels(bot, channel_ids):
         try:
             await post_outstanding_announce(channel, guild_id)
             posted += 1

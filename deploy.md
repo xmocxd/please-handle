@@ -62,5 +62,5 @@ sudo systemctl enable --now please-handle
 
 ## After start
 
-1. In Discord: `/handle enable` in the channel that should get scheduled announces
-2. Optional: `/handle schedule`, `/handle timezone`, `/handle settings`
+1. In Discord: `/handle enable` in the channel that should get scheduled posts
+2. Optional: `/handle schedule` (type `opentasks` or `announce`), `/handle timezone`, `/handle settings`

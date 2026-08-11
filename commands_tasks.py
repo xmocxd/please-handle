@@ -27,6 +27,7 @@ async def _ack_and_refresh(
     guild_id: int,
     *,
     unassigned: bool = False,
+    ensure_unassigned: bool = False,
     user_ids: list[int] | None = None,
 ) -> None:
     await _silent_ack(interaction)
@@ -35,7 +36,9 @@ async def _ack_and_refresh(
         guild_id,
         discord_guild=interaction.guild,
         unassigned=unassigned,
+        ensure_unassigned=ensure_unassigned,
         user_ids=user_ids,
+        fallback_channel_id=interaction.channel_id,
     )
 
 
@@ -142,6 +145,7 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
             discord_guild=interaction.guild,
             unassigned=True,
             user_ids=[interaction.user.id],
+            fallback_channel_id=interaction.channel_id,
         )
 
     @tree.command(name="drop", description="Drop one of your assigned tasks back to unassigned")
@@ -161,7 +165,9 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
             gid,
             discord_guild=interaction.guild,
             unassigned=True,
+            ensure_unassigned=True,
             user_ids=[interaction.user.id],
+            fallback_channel_id=interaction.channel_id,
         )
 
     @tree.command(name="mytasks", description="Show your assigned tasks (only you can see this)")
@@ -192,6 +198,7 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
             gid,
             discord_guild=interaction.guild,
             user_ids=[interaction.user.id],
+            fallback_channel_id=interaction.channel_id,
         )
         try:
             await interaction.delete_original_response()
@@ -207,7 +214,9 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
-        await _ack_and_refresh(interaction, gid, unassigned=True)
+        await _ack_and_refresh(
+            interaction, gid, unassigned=True, ensure_unassigned=True
+        )
 
     @tree.command(name="assign", description="Assign an unassigned task to a user")
     @app_commands.describe(task_number="Number from the unassigned list", user="Who should own it")
@@ -231,6 +240,7 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
             discord_guild=interaction.guild,
             unassigned=True,
             user_ids=[user.id],
+            fallback_channel_id=interaction.channel_id,
         )
 
     @tree.command(name="unassign", description="Unassign a task from a user's list")
@@ -247,7 +257,11 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
         await _ack_and_refresh(
-            interaction, gid, unassigned=True, user_ids=[user.id]
+            interaction,
+            gid,
+            unassigned=True,
+            ensure_unassigned=True,
+            user_ids=[user.id],
         )
 
     @tree.command(name="removetask", description="Delete a task from the unassigned list")
@@ -259,4 +273,6 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
-        await _ack_and_refresh(interaction, gid, unassigned=True)
+        await _ack_and_refresh(
+            interaction, gid, unassigned=True, ensure_unassigned=True
+        )

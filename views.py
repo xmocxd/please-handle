@@ -96,6 +96,14 @@ class NewTaskModal(discord.ui.Modal, title="New Task"):
             await interaction.response.edit_message(view=view)
         else:
             await _silent_ack(interaction)
+            await refresh_public_lists(
+                interaction.client,
+                interaction.guild_id,
+                discord_guild=interaction.guild,
+                unassigned=True,
+                ensure_unassigned=True,
+                fallback_channel_id=interaction.channel_id,
+            )
 
 
 class NewTaskButton(
@@ -336,6 +344,7 @@ class AssignUserSelect(discord.ui.UserSelect):
             discord_guild=interaction.guild,
             unassigned=True,
             user_ids=[user.id],
+            fallback_channel_id=interaction.channel_id,
         )
 
 
@@ -439,6 +448,7 @@ class PickupButton(
             guild_id,
             discord_guild=interaction.guild,
             user_ids=[interaction.user.id],
+            fallback_channel_id=interaction.channel_id,
         )
 
 
@@ -504,7 +514,9 @@ class DropButton(
                 guild_id,
                 discord_guild=interaction.guild,
                 unassigned=True,
+                ensure_unassigned=True,
                 user_ids=[interaction.user.id],
+                fallback_channel_id=interaction.channel_id,
             )
         else:
             view = await build_assignee_view(
@@ -522,6 +534,8 @@ class DropButton(
                 guild_id,
                 discord_guild=interaction.guild,
                 unassigned=True,
+                ensure_unassigned=True,
+                fallback_channel_id=interaction.channel_id,
             )
 
 
@@ -585,6 +599,7 @@ class MarkDoneButton(
                 guild_id,
                 discord_guild=interaction.guild,
                 user_ids=[interaction.user.id],
+                fallback_channel_id=interaction.channel_id,
             )
         else:
             view = await build_assignee_view(
@@ -602,6 +617,7 @@ class MarkDoneButton(
                 guild_id,
                 discord_guild=interaction.guild,
                 user_ids=[interaction.user.id],
+                fallback_channel_id=interaction.channel_id,
             )
 
 

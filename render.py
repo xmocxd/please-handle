@@ -382,17 +382,49 @@ async def hide_public_lists(client: discord.Client, guild_id: int) -> int:
     return deleted
 
 
+async def _resolve_messageable_channel(
+    client: discord.Client, channel_id: int
+) -> discord.abc.Messageable | None:
+    channel = client.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await client.fetch_channel(channel_id)
+        except discord.HTTPException:
+            return None
+    if not isinstance(channel, discord.abc.Messageable):
+        return None
+    return channel
+
+
 async def refresh_public_lists(
     client: discord.Client,
     guild_id: int,
     *,
     discord_guild: discord.Guild | None = None,
     unassigned: bool = False,
+    ensure_unassigned: bool = False,
     user_ids: list[int] | None = None,
+    fallback_channel_id: int | None = None,
 ) -> None:
-    """Edit the most recent tracked public list messages after task state changes."""
+    """Edit tracked public list messages after task state changes.
+
+    When a requested destination list has no editable tracked message, posts a new
+    one (assignees always; unassigned only if ensure_unassigned). If nothing is
+    tracked yet, seeds fallback_channel_id.
+    """
     user_ids = list(user_ids or [])
-    tracked = svc.get_public_list_msgs(guild_id)
+    if not unassigned and not ensure_unassigned and not user_ids:
+        return
+
+    tracked = dict(svc.get_public_list_msgs(guild_id) or {})
+    if not tracked and fallback_channel_id is not None:
+        tracked = {
+            str(fallback_channel_id): {
+                "unassigned_message_id": None,
+                "assignees": {},
+            }
+        }
+
     if not tracked:
         return
 
@@ -401,22 +433,29 @@ async def refresh_public_lists(
             channel_id = int(channel_key)
         except ValueError:
             continue
-        channel = client.get_channel(channel_id)
+        channel = await _resolve_messageable_channel(client, channel_id)
         if channel is None:
-            try:
-                channel = await client.fetch_channel(channel_id)
-            except discord.HTTPException:
-                continue
-        if not isinstance(channel, discord.abc.Messageable):
             continue
 
-        if unassigned:
+        if unassigned or ensure_unassigned:
             mid = entry.get("unassigned_message_id")
+            edited = False
             if mid:
                 try:
                     msg = await channel.fetch_message(int(mid))
                     await msg.edit(view=build_unassigned_view(guild_id, offset=0))
+                    edited = True
                 except (discord.NotFound, discord.HTTPException):
+                    edited = False
+            if not edited and ensure_unassigned:
+                try:
+                    sent = await channel.send(
+                        view=build_unassigned_view(guild_id, offset=0)
+                    )
+                    svc.update_public_list_unassigned_msg(
+                        guild_id, channel_id, sent.id
+                    )
+                except discord.HTTPException:
                     pass
 
         assignees = dict(entry.get("assignees") or {})
@@ -449,9 +488,11 @@ def settings_text(guild_id: int) -> str:
     return (
         "**please-handle settings**\n"
         f"- Timezone: `{s.get('timezone')}`\n"
-        f"- Schedule: `{s.get('schedule_days')} {s.get('schedule_time')}`\n"
+        f"- Opentasks schedule: `{s.get('opentasks_schedule_days')} {s.get('opentasks_schedule_time')}`\n"
+        f"- Announce schedule: `{s.get('schedule_days')} {s.get('schedule_time')}`\n"
         f"- Purge age: `{s.get('purge_age_days')}` days\n"
         f"- Enabled channels: {ch_list}\n"
+        f"- Last opentasks date: `{s.get('last_opentasks_date')}`\n"
         f"- Last announce date: `{s.get('last_announce_date')}`\n"
         f"- Active tasks: `{len(guild['tasks'])}`\n"
         f"- Recent purged buffer: `{len(guild.get('recent_purged') or [])}`"

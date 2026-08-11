@@ -12,9 +12,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "timezone": "America/New_York",
     "schedule_days": "M",
     "schedule_time": "1200",
+    "opentasks_schedule_days": "MTWHFSU",
+    "opentasks_schedule_time": "1100",
     "purge_age_days": 30,
     "enabled_channel_ids": [],
     "last_announce_date": None,
+    "last_opentasks_date": None,
 }
 
 

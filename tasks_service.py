@@ -430,14 +430,34 @@ def parse_schedule(days: str, time_str: str) -> tuple[str, str]:
     return normalized_days, time_str
 
 
-def set_schedule(guild_id: int, days: str, time_str: str) -> tuple[str, str]:
+SCHEDULE_KINDS = ("announce", "opentasks")
+
+_SCHEDULE_KEYS = {
+    "announce": ("schedule_days", "schedule_time", "last_announce_date", "M", "1200"),
+    "opentasks": (
+        "opentasks_schedule_days",
+        "opentasks_schedule_time",
+        "last_opentasks_date",
+        "MTWHFSU",
+        "1100",
+    ),
+}
+
+
+def set_schedule(
+    guild_id: int, kind: str, days: str, time_str: str
+) -> tuple[str, str, str]:
+    kind = kind.strip().lower()
+    if kind not in _SCHEDULE_KEYS:
+        raise ServiceError(f"Schedule type must be one of: {', '.join(SCHEDULE_KINDS)}.")
     normalized_days, normalized_time = parse_schedule(days, time_str)
+    days_key, time_key, _last_key, _dd, _dt = _SCHEDULE_KEYS[kind]
     state = load_state()
     guild = get_guild(state, guild_id)
-    guild["settings"]["schedule_days"] = normalized_days
-    guild["settings"]["schedule_time"] = normalized_time
+    guild["settings"][days_key] = normalized_days
+    guild["settings"][time_key] = normalized_time
     save_state(state)
-    return normalized_days, normalized_time
+    return kind, normalized_days, normalized_time
 
 
 def set_timezone(guild_id: int, tz_name: str) -> str:
@@ -470,23 +490,37 @@ def mark_announced(guild_id: int, date_str: str) -> None:
     save_state(state)
 
 
-def should_announce(guild: dict[str, Any]) -> bool:
+def mark_opentasks(guild_id: int, date_str: str) -> None:
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    guild["settings"]["last_opentasks_date"] = date_str
+    save_state(state)
+
+
+def should_run_schedule(guild: dict[str, Any], kind: str) -> bool:
+    if kind not in _SCHEDULE_KEYS:
+        return False
     settings = guild["settings"]
     if not settings.get("enabled_channel_ids"):
         return False
+    days_key, time_key, last_key, default_days, default_time = _SCHEDULE_KEYS[kind]
     now = guild_now(guild)
     letter = WEEKDAY_TO_LETTER[now.weekday()]
-    days = settings.get("schedule_days") or "M"
-    time_str = settings.get("schedule_time") or "1200"
+    days = settings.get(days_key) or default_days
+    time_str = settings.get(time_key) or default_time
     if letter not in days:
         return False
     hhmm = f"{now.hour:02d}{now.minute:02d}"
     if hhmm != time_str:
         return False
     today = now.date().isoformat()
-    if settings.get("last_announce_date") == today:
+    if settings.get(last_key) == today:
         return False
     return True
+
+
+def should_announce(guild: dict[str, Any]) -> bool:
+    return should_run_schedule(guild, "announce")
 
 
 def is_privileged(user_id: int, guild_owner_id: Optional[int], privileged: set[int]) -> bool:

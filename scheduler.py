@@ -6,7 +6,7 @@ import discord
 from discord.ext import tasks
 
 import tasks_service as svc
-from announce import run_announce_for_guild
+from announce import run_announce_for_guild, run_opentasks_for_guild
 from storage import get_guild, load_state
 
 log = logging.getLogger("please-handle.scheduler")
@@ -34,12 +34,31 @@ class AnnounceScheduler:
                 continue
             state = load_state()
             guild = get_guild(state, guild_id)
-            if not svc.should_announce(guild):
-                continue
 
-            posted = await run_announce_for_guild(self.bot, guild_id, mark_announced=True)
-            if posted:
-                log.info("Announced outstanding tasks for guild %s (%s channel(s))", guild_id, posted)
+            if svc.should_run_schedule(guild, "opentasks"):
+                posted = await run_opentasks_for_guild(
+                    self.bot, guild_id, mark_posted=True
+                )
+                if posted:
+                    log.info(
+                        "Posted opentasks for guild %s (%s channel(s))",
+                        guild_id,
+                        posted,
+                    )
+
+            # Re-load in case opentasks mutated settings / state
+            state = load_state()
+            guild = get_guild(state, guild_id)
+            if svc.should_run_schedule(guild, "announce"):
+                posted = await run_announce_for_guild(
+                    self.bot, guild_id, mark_announced=True
+                )
+                if posted:
+                    log.info(
+                        "Announced outstanding tasks for guild %s (%s channel(s))",
+                        guild_id,
+                        posted,
+                    )
 
     @loop.before_loop
     async def before_loop(self) -> None:

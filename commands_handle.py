@@ -28,7 +28,7 @@ handle_group = app_commands.Group(
 )
 
 
-@handle_group.command(name="enable", description="Enable scheduled announces in this channel")
+@handle_group.command(name="enable", description="Enable scheduled posts in this channel")
 async def handle_enable(interaction: discord.Interaction) -> None:
     try:
         _check_privileged(interaction)
@@ -39,7 +39,7 @@ async def handle_enable(interaction: discord.Interaction) -> None:
         return
     if added:
         await interaction.response.send_message(
-            f"Scheduled announces enabled in <#{interaction.channel_id}>."
+            f"Scheduled posts enabled in <#{interaction.channel_id}>."
         )
     else:
         await interaction.response.send_message(
@@ -47,7 +47,7 @@ async def handle_enable(interaction: discord.Interaction) -> None:
         )
 
 
-@handle_group.command(name="disable", description="Disable scheduled announces in this channel")
+@handle_group.command(name="disable", description="Disable scheduled posts in this channel")
 async def handle_disable(interaction: discord.Interaction) -> None:
     try:
         _check_privileged(interaction)
@@ -58,7 +58,7 @@ async def handle_disable(interaction: discord.Interaction) -> None:
         return
     if removed:
         await interaction.response.send_message(
-            f"Scheduled announces disabled in <#{interaction.channel_id}>."
+            f"Scheduled posts disabled in <#{interaction.channel_id}>."
         )
     else:
         await interaction.response.send_message(
@@ -66,20 +66,35 @@ async def handle_disable(interaction: discord.Interaction) -> None:
         )
 
 
-@handle_group.command(name="schedule", description="Set announce schedule (e.g. MWF 1700)")
+@handle_group.command(
+    name="schedule",
+    description="Set a schedule (opentasks list or outstanding-tasks announce)",
+)
 @app_commands.describe(
+    type="opentasks = daily unassigned list; announce = outstanding-tasks reminder",
     days="Day letters MTWHFSU (Mon Tue Wed tHu Fri Sat sUn)",
     time="24-hour time as HHMM, e.g. 0900",
 )
-async def handle_schedule(interaction: discord.Interaction, days: str, time: str) -> None:
+@app_commands.choices(
+    type=[
+        app_commands.Choice(name="opentasks", value="opentasks"),
+        app_commands.Choice(name="announce", value="announce"),
+    ]
+)
+async def handle_schedule(
+    interaction: discord.Interaction,
+    type: app_commands.Choice[str],
+    days: str,
+    time: str,
+) -> None:
     try:
         _check_privileged(interaction)
         gid = _guild_id(interaction)
-        d, t = svc.set_schedule(gid, days, time)
+        kind, d, t = svc.set_schedule(gid, type.value, days, time)
     except svc.ServiceError as e:
         await interaction.response.send_message(str(e), ephemeral=True)
         return
-    await interaction.response.send_message(f"Schedule set to `{d} {t}`.")
+    await interaction.response.send_message(f"**{kind}** schedule set to `{d} {t}`.")
 
 
 @handle_group.command(name="timezone", description="Set timezone (e.g. America/New_York)")
@@ -133,7 +148,9 @@ async def handle_force_purge(interaction: discord.Interaction) -> None:
         gid,
         discord_guild=interaction.guild,
         unassigned=True,
+        ensure_unassigned=True,
         user_ids=user_ids,
+        fallback_channel_id=interaction.channel_id,
     )
 
 
