@@ -176,6 +176,51 @@ class ShowMoreButton(
         await interaction.response.edit_message(view=view)
 
 
+class DescriptionButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"ph:desc:(?P<task_id>[0-9a-fA-F-]{36})",
+):
+    """Clickable task label — shows full description ephemerally (URLs can embed)."""
+
+    def __init__(self, task_id: str, *, label: str) -> None:
+        self.task_id = task_id
+        super().__init__(
+            discord.ui.Button(
+                label=label,
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"ph:desc:{task_id}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ):
+        # Label comes from the message component; use a placeholder for reconstruction.
+        return cls(match["task_id"], label=item.label or "Task")
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        try:
+            guild_id = await _require_guild(interaction)
+        except RuntimeError:
+            return
+        state = load_state()
+        guild = get_guild(state, guild_id)
+        task = svc.get_task_by_id(guild, self.task_id)
+        if task is None:
+            await interaction.response.send_message("Task not found.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            task["description"],
+            ephemeral=True,
+            suppress_embeds=False,
+        )
+
+
 class AssignUserSelect(discord.ui.UserSelect):
     def __init__(self, task_id: str, guild_id: int) -> None:
         super().__init__(
@@ -482,6 +527,7 @@ class MarkDoneButton(
 
 
 DYNAMIC_ITEMS = (
+    DescriptionButton,
     PickupButton,
     AssignButton,
     DropButton,

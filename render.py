@@ -41,18 +41,12 @@ def _truncate_label(text: str) -> str:
     return text[: _BUTTON_LABEL_MAX - 1] + "…"
 
 
-def _task_section(text: str, *buttons: discord.ui.Item) -> discord.ui.Item:
-    """Task text with action button(s) on the same line to the right."""
-    if len(buttons) == 1:
-        return discord.ui.Section(text, accessory=buttons[0])
+def _task_section(task_id: str, text: str, *buttons: discord.ui.Item) -> discord.ui.Item:
+    """Description button (click for full text) + action button(s) on one row."""
+    from views import DescriptionButton
+
     row = discord.ui.ActionRow()
-    row.add_item(
-        discord.ui.Button(
-            label=_truncate_label(text),
-            style=discord.ButtonStyle.secondary,
-            disabled=True,
-        )
-    )
+    row.add_item(DescriptionButton(task_id, label=_truncate_label(text)))
     for btn in buttons:
         row.add_item(btn)
     return row
@@ -115,6 +109,7 @@ def build_unassigned_view(guild_id: int, *, offset: int = 0) -> discord.ui.Layou
             continue
         task_items.append(
             _task_section(
+                task["id"],
                 f"{i + 1}. {task['description']}",
                 PickupButton(task["id"]),
                 AssignButton(task["id"]),
@@ -196,11 +191,15 @@ async def build_assignee_view(
             continue
         if task.get("completed"):
             task_items.append(
-                discord.ui.TextDisplay(f"{i + 1}. ~~{task['description']}~~ ✅")
+                _task_section(
+                    task["id"],
+                    f"{i + 1}. ✅ {task['description']}",
+                )
             )
         else:
             task_items.append(
                 _task_section(
+                    task["id"],
                     f"{i + 1}. {task['description']}",
                     DropButton(task["id"], source="pub"),
                     MarkDoneButton(task["id"], source="pub"),
@@ -261,11 +260,15 @@ def build_mytasks_view(guild_id: int, user_id: int, *, offset: int = 0) -> disco
             continue
         if task.get("completed"):
             task_items.append(
-                discord.ui.TextDisplay(f"{i + 1}. ~~{task['description']}~~ ✅")
+                _task_section(
+                    task["id"],
+                    f"{i + 1}. ✅ {task['description']}",
+                )
             )
         else:
             task_items.append(
                 _task_section(
+                    task["id"],
                     f"{i + 1}. {task['description']}",
                     DropButton(task["id"], source="priv"),
                     MarkDoneButton(task["id"], source="priv"),
