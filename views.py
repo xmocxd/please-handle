@@ -55,6 +55,68 @@ async def _publish_or_update_daily_digest(
     svc.set_daily_completion_msg(guild_id, user.id, date_str, sent.channel.id, sent.id)
 
 
+class NewTaskModal(discord.ui.Modal, title="New Task"):
+    description = discord.ui.TextInput(
+        label="Description",
+        placeholder="What needs to be done?",
+        style=discord.TextStyle.paragraph,
+        max_length=500,
+        required=True,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        if interaction.guild_id is None:
+            await interaction.response.send_message("This only works in a server.", ephemeral=True)
+            return
+        try:
+            task = svc.new_task(interaction.guild_id, str(self.description.value))
+        except svc.ServiceError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+            return
+
+        view = await build_public_tasklist_view(
+            interaction.guild_id, discord_guild=interaction.guild
+        )
+        # Refresh the public list message this button lived on, when possible.
+        if interaction.message is not None:
+            await interaction.response.edit_message(view=view)
+            await interaction.followup.send(
+                f"Added unassigned task: **{task['description']}**.",
+            )
+        else:
+            await interaction.response.send_message(
+                f"Added unassigned task: **{task['description']}**.",
+            )
+
+
+class NewTaskButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"ph:newtask",
+):
+    def __init__(self) -> None:
+        super().__init__(
+            discord.ui.Button(
+                label="New Task",
+                emoji="➕",
+                style=discord.ButtonStyle.success,
+                custom_id="ph:newtask",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ):
+        return cls()
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(NewTaskModal())
+
+
 class PickupButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"ph:pickup:(?P<task_id>[0-9a-fA-F-]{36})",
@@ -63,7 +125,8 @@ class PickupButton(
         self.task_id = task_id
         super().__init__(
             discord.ui.Button(
-                label="Pickup",
+                label="Pick Up",
+                emoji="📥",
                 style=discord.ButtonStyle.primary,
                 custom_id=f"ph:pickup:{task_id}",
             )
@@ -90,25 +153,26 @@ class PickupButton(
             await interaction.response.send_message(str(e), ephemeral=True)
             return
 
-        view = build_public_tasklist_view(guild_id)
+        view = await build_public_tasklist_view(guild_id, discord_guild=interaction.guild)
         await interaction.response.edit_message(view=view)
         await interaction.followup.send(
             f"{interaction.user.mention} picked up **{task['description']}**.",
         )
 
 
-class PutdownButton(
+class DropButton(
     discord.ui.DynamicItem[discord.ui.Button],
-    template=r"ph:putdown:(?P<source>pub|priv):(?P<task_id>[0-9a-fA-F-]{36})",
+    template=r"ph:drop:(?P<source>pub|priv):(?P<task_id>[0-9a-fA-F-]{36})",
 ):
     def __init__(self, task_id: str, source: Source = "pub") -> None:
         self.task_id = task_id
         self.source: Source = source
         super().__init__(
             discord.ui.Button(
-                label="Putdown",
+                label="Drop",
+                emoji="📤",
                 style=discord.ButtonStyle.secondary,
-                custom_id=f"ph:putdown:{source}:{task_id}",
+                custom_id=f"ph:drop:{source}:{task_id}",
             )
         )
 
@@ -136,12 +200,12 @@ class PutdownButton(
             return
         if task.get("assignee_id") != interaction.user.id:
             await interaction.response.send_message(
-                "Only the assignee can put down this task.", ephemeral=True
+                "Only the assignee can drop this task.", ephemeral=True
             )
             return
 
         try:
-            task = svc.putdown_task_by_id(guild_id, interaction.user.id, self.task_id)
+            task = svc.drop_task_by_id(guild_id, interaction.user.id, self.task_id)
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
@@ -150,13 +214,13 @@ class PutdownButton(
             view = build_mytasks_view(guild_id, interaction.user.id)
             await interaction.response.edit_message(view=view)
             await interaction.followup.send(
-                f"{interaction.user.mention} put down **{task['description']}**.",
+                f"{interaction.user.mention} dropped **{task['description']}**.",
             )
         else:
-            view = build_public_tasklist_view(guild_id)
+            view = await build_public_tasklist_view(guild_id, discord_guild=interaction.guild)
             await interaction.response.edit_message(view=view)
             await interaction.followup.send(
-                f"{interaction.user.mention} put down **{task['description']}**.",
+                f"{interaction.user.mention} dropped **{task['description']}**.",
             )
 
 
@@ -170,6 +234,7 @@ class MarkDoneButton(
         super().__init__(
             discord.ui.Button(
                 label="Done",
+                emoji="✅",
                 style=discord.ButtonStyle.success,
                 custom_id=f"ph:done:{source}:{task_id}",
             )
@@ -215,11 +280,11 @@ class MarkDoneButton(
             await interaction.response.edit_message(view=view)
             await _publish_or_update_daily_digest(interaction, guild_id, interaction.user, desc)
         else:
-            view = build_public_tasklist_view(guild_id)
+            view = await build_public_tasklist_view(guild_id, discord_guild=interaction.guild)
             await interaction.response.edit_message(view=view)
             await interaction.followup.send(
                 f"{interaction.user.mention} completed **{desc}**.",
             )
 
 
-DYNAMIC_ITEMS = (PickupButton, PutdownButton, MarkDoneButton)
+DYNAMIC_ITEMS = (PickupButton, DropButton, MarkDoneButton, NewTaskButton)

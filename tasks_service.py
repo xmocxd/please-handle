@@ -150,18 +150,18 @@ def pickup_task_by_id(guild_id: int, user_id: int, task_id: str) -> dict[str, An
     return task
 
 
-def putdown_task(guild_id: int, user_id: int, number: int) -> dict[str, Any]:
+def drop_task(guild_id: int, user_id: int, number: int) -> dict[str, Any]:
     state = load_state()
     guild = get_guild(state, guild_id)
     task = task_by_user_number(guild, user_id, number)
     if task.get("completed"):
-        raise ServiceError("Completed tasks cannot be put down.")
+        raise ServiceError("Completed tasks cannot be dropped.")
     task["assignee_id"] = None
     save_state(state)
     return task
 
 
-def putdown_task_by_id(guild_id: int, user_id: int, task_id: str) -> dict[str, Any]:
+def drop_task_by_id(guild_id: int, user_id: int, task_id: str) -> dict[str, Any]:
     state = load_state()
     guild = get_guild(state, guild_id)
     task = get_task_by_id(guild, task_id)
@@ -170,7 +170,7 @@ def putdown_task_by_id(guild_id: int, user_id: int, task_id: str) -> dict[str, A
     if task.get("assignee_id") != user_id:
         raise ServiceError("That task is not assigned to you.")
     if task.get("completed"):
-        raise ServiceError("Completed tasks cannot be put down.")
+        raise ServiceError("Completed tasks cannot be dropped.")
     task["assignee_id"] = None
     save_state(state)
     return task

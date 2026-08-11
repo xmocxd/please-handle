@@ -58,7 +58,11 @@ class AnnounceScheduler:
                 if not isinstance(channel, discord.abc.Messageable):
                     continue
                 try:
-                    await channel.send(view=build_public_tasklist_view(guild_id))
+                    guild_obj = self.bot.get_guild(guild_id)
+                    view = await build_public_tasklist_view(
+                        guild_id, discord_guild=guild_obj
+                    )
+                    await channel.send(view=view)
                 except discord.HTTPException as e:
                     log.warning("Failed to announce in %s: %s", channel_id, e)
 

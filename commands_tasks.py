@@ -22,7 +22,7 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
-        view = build_public_tasklist_view(gid)
+        view = await build_public_tasklist_view(gid, discord_guild=interaction.guild)
         await interaction.response.send_message(view=view)
 
     @tree.command(name="pickup", description="Pick up an unassigned task by number")
@@ -38,17 +38,17 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
             f"{interaction.user.mention} picked up **{task['description']}**."
         )
 
-    @tree.command(name="putdown", description="Put down one of your assigned tasks")
+    @tree.command(name="drop", description="Drop one of your assigned tasks back to unassigned")
     @app_commands.describe(task_number="Number from your own task list")
-    async def putdown(interaction: discord.Interaction, task_number: app_commands.Range[int, 1, 999]) -> None:
+    async def drop(interaction: discord.Interaction, task_number: app_commands.Range[int, 1, 999]) -> None:
         try:
             gid = _guild_id(interaction)
-            task = svc.putdown_task(gid, interaction.user.id, task_number)
+            task = svc.drop_task(gid, interaction.user.id, task_number)
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
         await interaction.response.send_message(
-            f"{interaction.user.mention} put down **{task['description']}**."
+            f"{interaction.user.mention} dropped **{task['description']}**."
         )
 
     @tree.command(name="mytasks", description="Show your assigned tasks (only you can see this)")
