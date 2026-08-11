@@ -6,7 +6,7 @@ import discord
 from discord.ext import tasks
 
 import tasks_service as svc
-from render import build_public_tasklist_view
+from render import post_public_tasklist
 from storage import get_guild, load_state
 
 log = logging.getLogger("please-handle.scheduler")
@@ -32,7 +32,6 @@ class AnnounceScheduler:
                 guild_id = int(guild_key)
             except ValueError:
                 continue
-            # Reload fresh guild slice each iteration
             state = load_state()
             guild = get_guild(state, guild_id)
             if not svc.should_announce(guild):
@@ -46,6 +45,7 @@ class AnnounceScheduler:
             guild = get_guild(state, guild_id)
             date_str = svc.guild_now(guild).date().isoformat()
             channel_ids = list(guild["settings"].get("enabled_channel_ids") or [])
+            guild_obj = self.bot.get_guild(guild_id)
 
             for channel_id in channel_ids:
                 channel = self.bot.get_channel(channel_id)
@@ -58,11 +58,9 @@ class AnnounceScheduler:
                 if not isinstance(channel, discord.abc.Messageable):
                     continue
                 try:
-                    guild_obj = self.bot.get_guild(guild_id)
-                    view = await build_public_tasklist_view(
-                        guild_id, discord_guild=guild_obj
+                    await post_public_tasklist(
+                        channel, guild_id, discord_guild=guild_obj
                     )
-                    await channel.send(view=view)
                 except discord.HTTPException as e:
                     log.warning("Failed to announce in %s: %s", channel_id, e)
 

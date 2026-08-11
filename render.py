@@ -15,7 +15,7 @@ _BUTTON_LABEL_MAX = 80
 
 
 def _count_items(view: discord.ui.LayoutView) -> int:
-    """Rough nested component count for truncation."""
+    """Nested component count for Discord's LayoutView limit."""
 
     def walk(items) -> int:
         total = 0
@@ -44,10 +44,7 @@ def _truncate_label(text: str) -> str:
 def _task_section(text: str, *buttons: discord.ui.Item) -> discord.ui.Item:
     """Task text with action button(s) on the same line to the right."""
     if len(buttons) == 1:
-        # Components V2 Section: text left, one button right
         return discord.ui.Section(text, accessory=buttons[0])
-    # Discord only allows a single Button/Thumbnail accessory on a Section.
-    # Keep label + actions on one ActionRow so they stay on the same line.
     row = discord.ui.ActionRow()
     row.add_item(
         discord.ui.Button(
@@ -61,17 +58,17 @@ def _task_section(text: str, *buttons: discord.ui.Item) -> discord.ui.Item:
     return row
 
 
-def _assignee_heading(user_id: int, member: discord.Member | None) -> discord.ui.Item:
-    """Heading with nick (no @) and profile icon."""
+def _avatar_url(user_id: int, member: discord.Member | None) -> str:
     if member is not None:
-        name = member.display_name
-        avatar_url = member.display_avatar.url
-    else:
-        name = f"User {user_id}"
-        avatar_url = f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+        return member.display_avatar.with_size(64).url
+    return f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png?size=64"
+
+
+def _assignee_heading(user_id: int, member: discord.Member | None) -> discord.ui.Item:
+    name = member.display_name if member is not None else f"User {user_id}"
     return discord.ui.Section(
         f"### {name}'s Tasks",
-        accessory=discord.ui.Thumbnail(avatar_url, description=name),
+        accessory=discord.ui.Thumbnail(_avatar_url(user_id, member), description=name),
     )
 
 
@@ -89,118 +86,329 @@ async def _resolve_member(
         return None
 
 
-async def build_public_tasklist_view(
-    guild_id: int,
-    *,
-    discord_guild: discord.Guild | None = None,
-) -> discord.ui.LayoutView:
-    from views import DropButton, MarkDoneButton, NewTaskButton, PickupButton
+def build_unassigned_view(guild_id: int, *, offset: int = 0) -> discord.ui.LayoutView:
+    from views import NewTaskButton, PickupButton, ShowMoreButton
 
     state = load_state()
     guild = get_guild(state, guild_id)
+    tasks = svc.unassigned_tasks(guild)
+
     view = discord.ui.LayoutView(timeout=None)
-    view.add_item(discord.ui.TextDisplay("## Please Handle"))
+    if offset == 0:
+        view.add_item(discord.ui.TextDisplay("## Please Handle"))
 
-    budget = MAX_LAYOUT_COMPONENTS - 5  # footer + new-task + truncation headroom
-    truncated = False
+    body: list[discord.ui.Item] = [discord.ui.TextDisplay("### Unassigned Tasks")]
+    if not tasks:
+        body.append(discord.ui.TextDisplay("_None_"))
+        view.add_item(discord.ui.Container(*body, accent_colour=COLOR_UNASSIGNED))
+        row = discord.ui.ActionRow()
+        row.add_item(NewTaskButton())
+        view.add_item(row)
+        return view
 
-    # --- Unassigned ---
-    unassigned = svc.unassigned_tasks(guild)
-    un_items: list[discord.ui.Item] = [discord.ui.TextDisplay("### Unassigned Tasks")]
-    if not unassigned:
-        un_items.append(discord.ui.TextDisplay("_None_"))
-    else:
-        for i, task in enumerate(unassigned, start=1):
-            if _count_items(view) + len(un_items) + 3 >= budget:
-                un_items.append(
-                    discord.ui.TextDisplay(f"_…and {len(unassigned) - i + 1} more unassigned_")
-                )
-                truncated = True
-                break
-            un_items.append(
-                _task_section(
-                    f"{i}. {task['description']}",
-                    PickupButton(task["id"]),
-                )
+    if offset > 0:
+        body.append(discord.ui.TextDisplay(f"_Continuing from #{offset + 1}_"))
+
+    task_items: list[discord.ui.Item] = []
+    for i, task in enumerate(tasks):
+        if i < offset:
+            continue
+        task_items.append(
+            _task_section(
+                f"{i + 1}. {task['description']}",
+                PickupButton(task["id"]),
             )
-    view.add_item(discord.ui.Container(*un_items, accent_colour=COLOR_UNASSIGNED))
-
-    # --- Per assignee (order matches each user's numbered list) ---
-    if not truncated:
-        for user_id in svc.assignees_in_order(guild):
-            if _count_items(view) >= budget:
-                truncated = True
-                break
-            tasks = svc.user_tasks(guild, user_id)
-            if not tasks:
-                continue
-
-            member = await _resolve_member(discord_guild, user_id)
-            section_items: list[discord.ui.Item] = [_assignee_heading(user_id, member)]
-            has_incomplete = False
-            for n, task in enumerate(tasks, start=1):
-                if task.get("completed"):
-                    section_items.append(
-                        discord.ui.TextDisplay(f"{n}. ~~{task['description']}~~ ✅")
-                    )
-                else:
-                    has_incomplete = True
-                    section_items.append(
-                        _task_section(
-                            f"{n}. {task['description']}",
-                            DropButton(task["id"], source="pub"),
-                            MarkDoneButton(task["id"], source="pub"),
-                        )
-                    )
-
-            accent = COLOR_ASSIGNED if has_incomplete else COLOR_COMPLETE
-            view.add_item(discord.ui.Container(*section_items, accent_colour=accent))
-
-            if _count_items(view) >= budget:
-                truncated = True
-                break
-
-    if truncated:
-        view.add_item(
-            discord.ui.TextDisplay("_List truncated — use slash commands for the rest._")
         )
 
-    view.add_item(discord.ui.Separator(visible=True))
-    new_row = discord.ui.ActionRow()
-    new_row.add_item(NewTaskButton())
-    view.add_item(new_row)
+    packed_body = list(body)
+    consumed = 0
+    while consumed < len(task_items):
+        trial_body = packed_body + [task_items[consumed]]
+        remaining_after = len(task_items) - (consumed + 1)
+        probe = discord.ui.LayoutView(timeout=None)
+        try:
+            for it in view.children:
+                probe.add_item(it)
+            probe.add_item(discord.ui.Container(*trial_body, accent_colour=COLOR_UNASSIGNED))
+            if remaining_after > 0:
+                r = discord.ui.ActionRow()
+                r.add_item(ShowMoreButton(kind="u", key=0, offset=offset + consumed + 1))
+                probe.add_item(r)
+            r_new = discord.ui.ActionRow()
+            r_new.add_item(NewTaskButton())
+            probe.add_item(r_new)
+        except ValueError:
+            break
+        if _count_items(probe) > MAX_LAYOUT_COMPONENTS:
+            break
+        packed_body.append(task_items[consumed])
+        consumed += 1
+
+    if consumed == 0 and task_items:
+        packed_body.append(task_items[0])
+        consumed = 1
+
+    view.add_item(discord.ui.Container(*packed_body, accent_colour=COLOR_UNASSIGNED))
+    next_offset = offset + consumed
+    if next_offset < len(tasks):
+        r = discord.ui.ActionRow()
+        r.add_item(ShowMoreButton(kind="u", key=0, offset=next_offset))
+        view.add_item(r)
+    r_new = discord.ui.ActionRow()
+    r_new.add_item(NewTaskButton())
+    view.add_item(r_new)
     return view
 
 
-def build_mytasks_view(guild_id: int, user_id: int) -> discord.ui.LayoutView:
-    from views import DropButton, MarkDoneButton
+async def build_assignee_view(
+    guild_id: int,
+    user_id: int,
+    *,
+    discord_guild: discord.Guild | None = None,
+    member: discord.Member | None = None,
+    offset: int = 0,
+) -> discord.ui.LayoutView:
+    from views import DropButton, MarkDoneButton, ShowMoreButton
 
     state = load_state()
     guild = get_guild(state, guild_id)
+    tasks = svc.user_tasks(guild, user_id)
+    if member is None:
+        member = await _resolve_member(discord_guild, user_id)
+
+    view = discord.ui.LayoutView(timeout=None)
+    body: list[discord.ui.Item] = [_assignee_heading(user_id, member)]
+    if offset > 0:
+        body.append(discord.ui.TextDisplay(f"_Continuing from #{offset + 1}_"))
+
+    has_incomplete = any(not t.get("completed") for t in tasks)
+    accent = COLOR_ASSIGNED if has_incomplete else COLOR_COMPLETE
+
+    if not tasks:
+        body.append(discord.ui.TextDisplay("_No tasks._"))
+        view.add_item(discord.ui.Container(*body, accent_colour=accent))
+        return view
+
+    task_items: list[discord.ui.Item] = []
+    for i, task in enumerate(tasks):
+        if i < offset:
+            continue
+        if task.get("completed"):
+            task_items.append(
+                discord.ui.TextDisplay(f"{i + 1}. ~~{task['description']}~~ ✅")
+            )
+        else:
+            task_items.append(
+                _task_section(
+                    f"{i + 1}. {task['description']}",
+                    DropButton(task["id"], source="pub"),
+                    MarkDoneButton(task["id"], source="pub"),
+                )
+            )
+
+    packed_body = list(body)
+    consumed = 0
+    while consumed < len(task_items):
+        trial_body = packed_body + [task_items[consumed]]
+        remaining_after = len(task_items) - (consumed + 1)
+        probe = discord.ui.LayoutView(timeout=None)
+        try:
+            probe.add_item(discord.ui.Container(*trial_body, accent_colour=accent))
+            if remaining_after > 0:
+                r = discord.ui.ActionRow()
+                r.add_item(ShowMoreButton(kind="a", key=user_id, offset=offset + consumed + 1))
+                probe.add_item(r)
+        except ValueError:
+            break
+        if _count_items(probe) > MAX_LAYOUT_COMPONENTS:
+            break
+        packed_body.append(task_items[consumed])
+        consumed += 1
+
+    if consumed == 0 and task_items:
+        packed_body.append(task_items[0])
+        consumed = 1
+
+    view.add_item(discord.ui.Container(*packed_body, accent_colour=accent))
+    next_offset = offset + consumed
+    if next_offset < len(tasks):
+        r = discord.ui.ActionRow()
+        r.add_item(ShowMoreButton(kind="a", key=user_id, offset=next_offset))
+        view.add_item(r)
+    return view
+
+
+def build_mytasks_view(guild_id: int, user_id: int, *, offset: int = 0) -> discord.ui.LayoutView:
+    from views import DropButton, MarkDoneButton, ShowMoreButton
+
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    tasks = svc.user_tasks(guild, user_id)
     view = discord.ui.LayoutView(timeout=None)
     view.add_item(discord.ui.TextDisplay("## Your Tasks:"))
 
-    tasks = svc.user_tasks(guild, user_id)
     if not tasks:
         view.add_item(discord.ui.TextDisplay("_No tasks assigned._"))
         return view
 
-    for i, task in enumerate(tasks, start=1):
+    if offset > 0:
+        view.add_item(discord.ui.TextDisplay(f"_Continuing from #{offset + 1}_"))
+
+    task_items: list[discord.ui.Item] = []
+    for i, task in enumerate(tasks):
+        if i < offset:
+            continue
         if task.get("completed"):
-            view.add_item(discord.ui.TextDisplay(f"{i}. ~~{task['description']}~~ ✅"))
+            task_items.append(
+                discord.ui.TextDisplay(f"{i + 1}. ~~{task['description']}~~ ✅")
+            )
         else:
-            view.add_item(
+            task_items.append(
                 _task_section(
-                    f"{i}. {task['description']}",
+                    f"{i + 1}. {task['description']}",
                     DropButton(task["id"], source="priv"),
                     MarkDoneButton(task["id"], source="priv"),
                 )
             )
-        if _count_items(view) >= MAX_LAYOUT_COMPONENTS:
-            view.add_item(discord.ui.TextDisplay("_List truncated._"))
-            break
 
+    consumed = 0
+    while consumed < len(task_items):
+        probe = discord.ui.LayoutView(timeout=None)
+        try:
+            for it in view.children:
+                probe.add_item(it)
+            probe.add_item(task_items[consumed])
+            remaining_after = len(task_items) - (consumed + 1)
+            if remaining_after > 0:
+                r = discord.ui.ActionRow()
+                r.add_item(ShowMoreButton(kind="m", key=user_id, offset=offset + consumed + 1))
+                probe.add_item(r)
+        except ValueError:
+            break
+        if _count_items(probe) > MAX_LAYOUT_COMPONENTS:
+            break
+        view.add_item(task_items[consumed])
+        consumed += 1
+
+    if consumed == 0 and task_items:
+        view.add_item(task_items[0])
+        consumed = 1
+
+    next_offset = offset + consumed
+    if next_offset < len(tasks):
+        r = discord.ui.ActionRow()
+        r.add_item(ShowMoreButton(kind="m", key=user_id, offset=next_offset))
+        view.add_item(r)
     return view
+
+
+async def post_public_tasklist(
+    destination: discord.abc.Messageable,
+    guild_id: int,
+    *,
+    discord_guild: discord.Guild | None = None,
+    interaction: discord.Interaction | None = None,
+) -> None:
+    """Post unassigned + each assignee as separate messages and remember their IDs."""
+    first = True
+    unassigned_message_id: int | None = None
+    assignee_message_ids: dict[int, int] = {}
+    channel_id: int | None = getattr(destination, "id", None)
+
+    async def _send(view: discord.ui.LayoutView) -> discord.Message:
+        nonlocal first
+        if first and interaction is not None and not interaction.response.is_done():
+            await interaction.response.send_message(view=view)
+            msg = await interaction.original_response()
+        elif interaction is not None and interaction.response.is_done():
+            msg = await interaction.followup.send(view=view, wait=True)
+        else:
+            msg = await destination.send(view=view)
+        first = False
+        return msg
+
+    msg = await _send(build_unassigned_view(guild_id, offset=0))
+    unassigned_message_id = msg.id
+    if channel_id is None:
+        channel_id = msg.channel.id
+
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    for user_id in svc.assignees_in_order(guild):
+        if not svc.user_tasks(guild, user_id):
+            continue
+        member = await _resolve_member(discord_guild, user_id)
+        view = await build_assignee_view(
+            guild_id, user_id, discord_guild=discord_guild, member=member, offset=0
+        )
+        msg = await _send(view)
+        assignee_message_ids[user_id] = msg.id
+
+    if channel_id is not None and unassigned_message_id is not None:
+        svc.record_public_list(
+            guild_id,
+            channel_id,
+            unassigned_message_id=unassigned_message_id,
+            assignee_message_ids=assignee_message_ids,
+        )
+
+
+async def refresh_public_lists(
+    client: discord.Client,
+    guild_id: int,
+    *,
+    discord_guild: discord.Guild | None = None,
+    unassigned: bool = False,
+    user_ids: list[int] | None = None,
+) -> None:
+    """Edit the most recent tracked public list messages after task state changes."""
+    user_ids = list(user_ids or [])
+    tracked = svc.get_public_list_msgs(guild_id)
+    if not tracked:
+        return
+
+    for channel_key, entry in tracked.items():
+        try:
+            channel_id = int(channel_key)
+        except ValueError:
+            continue
+        channel = client.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await client.fetch_channel(channel_id)
+            except discord.HTTPException:
+                continue
+        if not isinstance(channel, discord.abc.Messageable):
+            continue
+
+        if unassigned:
+            mid = entry.get("unassigned_message_id")
+            if mid:
+                try:
+                    msg = await channel.fetch_message(int(mid))
+                    await msg.edit(view=build_unassigned_view(guild_id, offset=0))
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+
+        assignees = dict(entry.get("assignees") or {})
+        for uid in user_ids:
+            mid = assignees.get(str(uid))
+            view = await build_assignee_view(
+                guild_id, uid, discord_guild=discord_guild, offset=0
+            )
+            if mid:
+                try:
+                    msg = await channel.fetch_message(int(mid))
+                    await msg.edit(view=view)
+                    continue
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+            # No tracked message (or it was deleted) — post a new assignee list.
+            try:
+                sent = await channel.send(view=view)
+                svc.update_public_list_assignee_msg(guild_id, channel_id, uid, sent.id)
+            except discord.HTTPException:
+                pass
 
 
 def settings_text(guild_id: int) -> str:

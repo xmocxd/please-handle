@@ -24,6 +24,7 @@ def _empty_guild() -> dict[str, Any]:
         "tasks": [],
         "recent_purged": [],
         "daily_completion_msgs": {},
+        "public_list_msgs": {},
     }
 
 
@@ -73,4 +74,5 @@ def get_guild(state: dict[str, Any], guild_id: int) -> dict[str, Any]:
         g.setdefault("tasks", [])
         g.setdefault("recent_purged", [])
         g.setdefault("daily_completion_msgs", {})
+        g.setdefault("public_list_msgs", {})
     return guilds[key]

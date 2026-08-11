@@ -21,4 +21,4 @@ for part in _raw_priv.split(","):
         PRIVILEGED_USERS.add(int(part))
 
 RECENT_PURGED_LIMIT = 50
-MAX_LAYOUT_COMPONENTS = 38  # leave headroom under Discord's 40 limit
+MAX_LAYOUT_COMPONENTS = 40  # Discord LayoutView hard limit

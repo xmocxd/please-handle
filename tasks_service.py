@@ -292,6 +292,42 @@ def get_daily_completion_msg(guild_id: int, user_id: int, date_str: str) -> Opti
     return guild.get("daily_completion_msgs", {}).get(key)
 
 
+def record_public_list(
+    guild_id: int,
+    channel_id: int,
+    *,
+    unassigned_message_id: int,
+    assignee_message_ids: dict[int, int],
+) -> None:
+    """Remember the latest public list messages posted in a channel."""
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    guild.setdefault("public_list_msgs", {})[str(channel_id)] = {
+        "unassigned_message_id": unassigned_message_id,
+        "assignees": {str(uid): mid for uid, mid in assignee_message_ids.items()},
+    }
+    save_state(state)
+
+
+def get_public_list_msgs(guild_id: int) -> dict[str, Any]:
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    return dict(guild.get("public_list_msgs") or {})
+
+
+def update_public_list_assignee_msg(
+    guild_id: int, channel_id: int, user_id: int, message_id: int
+) -> None:
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    channel = guild.setdefault("public_list_msgs", {}).setdefault(
+        str(channel_id),
+        {"unassigned_message_id": None, "assignees": {}},
+    )
+    channel.setdefault("assignees", {})[str(user_id)] = message_id
+    save_state(state)
+
+
 def enable_channel(guild_id: int, channel_id: int) -> bool:
     state = load_state()
     guild = get_guild(state, guild_id)

@@ -6,10 +6,16 @@ from typing import Literal
 import discord
 
 import tasks_service as svc
-from render import build_mytasks_view, build_public_tasklist_view
+from render import (
+    build_assignee_view,
+    build_mytasks_view,
+    build_unassigned_view,
+    refresh_public_lists,
+)
 from storage import get_guild, load_state
 
 Source = Literal["pub", "priv"]
+ShowMoreKind = Literal["u", "a", "m"]
 
 
 async def _require_guild(interaction: discord.Interaction) -> int:
@@ -19,13 +25,24 @@ async def _require_guild(interaction: discord.Interaction) -> int:
     return interaction.guild_id
 
 
+async def _silent_ack(interaction: discord.Interaction) -> None:
+    """Acknowledge without leaving a visible success message."""
+    if interaction.response.is_done():
+        return
+    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.delete_original_response()
+    except discord.HTTPException:
+        pass
+
+
 async def _publish_or_update_daily_digest(
     interaction: discord.Interaction,
     guild_id: int,
     user: discord.abc.User,
     completed_description: str,
 ) -> None:
-    """Public once-per-day completion message with updated personal list (slash / mytasks)."""
+    """Public once-per-day completion message with updated personal list."""
     state = load_state()
     guild = get_guild(state, guild_id)
     date_str = svc.guild_now(guild).date().isoformat()
@@ -69,24 +86,16 @@ class NewTaskModal(discord.ui.Modal, title="New Task"):
             await interaction.response.send_message("This only works in a server.", ephemeral=True)
             return
         try:
-            task = svc.new_task(interaction.guild_id, str(self.description.value))
+            svc.new_task(interaction.guild_id, str(self.description.value))
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
 
-        view = await build_public_tasklist_view(
-            interaction.guild_id, discord_guild=interaction.guild
-        )
-        # Refresh the public list message this button lived on, when possible.
+        view = build_unassigned_view(interaction.guild_id, offset=0)
         if interaction.message is not None:
             await interaction.response.edit_message(view=view)
-            await interaction.followup.send(
-                f"Added unassigned task: **{task['description']}**.",
-            )
         else:
-            await interaction.response.send_message(
-                f"Added unassigned task: **{task['description']}**.",
-            )
+            await _silent_ack(interaction)
 
 
 class NewTaskButton(
@@ -115,6 +124,56 @@ class NewTaskButton(
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_modal(NewTaskModal())
+
+
+class ShowMoreButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"ph:more:(?P<kind>u|a|m):(?P<key>[0-9]+):(?P<offset>[0-9]+)",
+):
+    def __init__(self, kind: ShowMoreKind, key: int, offset: int) -> None:
+        self.kind = kind
+        self.key = key
+        self.offset = offset
+        super().__init__(
+            discord.ui.Button(
+                label="Show more",
+                emoji="⬇️",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"ph:more:{kind}:{key}:{offset}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ):
+        return cls(match["kind"], int(match["key"]), int(match["offset"]))  # type: ignore[arg-type]
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        try:
+            guild_id = await _require_guild(interaction)
+        except RuntimeError:
+            return
+
+        if self.kind == "u":
+            view = build_unassigned_view(guild_id, offset=self.offset)
+        elif self.kind == "a":
+            view = await build_assignee_view(
+                guild_id, self.key, discord_guild=interaction.guild, offset=self.offset
+            )
+        else:
+            if interaction.user.id != self.key:
+                await interaction.response.send_message(
+                    "This list is not yours.", ephemeral=True
+                )
+                return
+            view = build_mytasks_view(guild_id, self.key, offset=self.offset)
+
+        await interaction.response.edit_message(view=view)
 
 
 class PickupButton(
@@ -148,15 +207,18 @@ class PickupButton(
         except RuntimeError:
             return
         try:
-            task = svc.pickup_task_by_id(guild_id, interaction.user.id, self.task_id)
+            svc.pickup_task_by_id(guild_id, interaction.user.id, self.task_id)
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
 
-        view = await build_public_tasklist_view(guild_id, discord_guild=interaction.guild)
+        view = build_unassigned_view(guild_id, offset=0)
         await interaction.response.edit_message(view=view)
-        await interaction.followup.send(
-            f"{interaction.user.mention} picked up **{task['description']}**.",
+        await refresh_public_lists(
+            interaction.client,
+            guild_id,
+            discord_guild=interaction.guild,
+            user_ids=[interaction.user.id],
         )
 
 
@@ -205,22 +267,34 @@ class DropButton(
             return
 
         try:
-            task = svc.drop_task_by_id(guild_id, interaction.user.id, self.task_id)
+            svc.drop_task_by_id(guild_id, interaction.user.id, self.task_id)
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
 
         if self.source == "priv":
-            view = build_mytasks_view(guild_id, interaction.user.id)
+            view = build_mytasks_view(guild_id, interaction.user.id, offset=0)
             await interaction.response.edit_message(view=view)
-            await interaction.followup.send(
-                f"{interaction.user.mention} dropped **{task['description']}**.",
+            await refresh_public_lists(
+                interaction.client,
+                guild_id,
+                discord_guild=interaction.guild,
+                unassigned=True,
+                user_ids=[interaction.user.id],
             )
         else:
-            view = await build_public_tasklist_view(guild_id, discord_guild=interaction.guild)
+            view = await build_assignee_view(
+                guild_id,
+                interaction.user.id,
+                discord_guild=interaction.guild,
+                offset=0,
+            )
             await interaction.response.edit_message(view=view)
-            await interaction.followup.send(
-                f"{interaction.user.mention} dropped **{task['description']}**.",
+            await refresh_public_lists(
+                interaction.client,
+                guild_id,
+                discord_guild=interaction.guild,
+                unassigned=True,
             )
 
 
@@ -276,15 +350,32 @@ class MarkDoneButton(
 
         desc = task["description"]
         if self.source == "priv":
-            view = build_mytasks_view(guild_id, interaction.user.id)
+            view = build_mytasks_view(guild_id, interaction.user.id, offset=0)
             await interaction.response.edit_message(view=view)
             await _publish_or_update_daily_digest(interaction, guild_id, interaction.user, desc)
+            await refresh_public_lists(
+                interaction.client,
+                guild_id,
+                discord_guild=interaction.guild,
+                user_ids=[interaction.user.id],
+            )
         else:
-            view = await build_public_tasklist_view(guild_id, discord_guild=interaction.guild)
+            view = await build_assignee_view(
+                guild_id,
+                interaction.user.id,
+                discord_guild=interaction.guild,
+                offset=0,
+            )
             await interaction.response.edit_message(view=view)
             await interaction.followup.send(
                 f"{interaction.user.mention} completed **{desc}**.",
             )
+            await refresh_public_lists(
+                interaction.client,
+                guild_id,
+                discord_guild=interaction.guild,
+                user_ids=[interaction.user.id],
+            )
 
 
-DYNAMIC_ITEMS = (PickupButton, DropButton, MarkDoneButton, NewTaskButton)
+DYNAMIC_ITEMS = (PickupButton, DropButton, MarkDoneButton, NewTaskButton, ShowMoreButton)
