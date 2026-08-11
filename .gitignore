@@ -1,6 +1,5 @@
 .env
 data/state.json
-data/.guild_commands_cleared
 __pycache__/
 *.pyc
 .venv/

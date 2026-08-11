@@ -8,14 +8,12 @@ from discord.ext import commands
 
 from commands_handle import setup_handle_commands
 from commands_tasks import setup_task_commands
-from config import DATA_DIR, DISCORD_TOKEN
+from config import DISCORD_TOKEN
 from scheduler import AnnounceScheduler
 from views import DYNAMIC_ITEMS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("please-handle")
-
-_GUILD_CMD_CLEANUP_FLAG = DATA_DIR / ".guild_commands_cleared"
 
 
 class PleaseHandleBot(commands.Bot):
@@ -34,14 +32,6 @@ class PleaseHandleBot(commands.Bot):
 
     async def on_ready(self) -> None:
         log.info("Logged in as %s (%s)", self.user, self.user.id if self.user else "?")
-        if not _GUILD_CMD_CLEANUP_FLAG.exists():
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            for guild in self.guilds:
-                # Empty guild sync removes leftover guild-scoped commands (duplicates)
-                await self.tree.sync(guild=guild)
-                log.info("Cleared guild-scoped commands for %s (%s)", guild.name, guild.id)
-            _GUILD_CMD_CLEANUP_FLAG.write_text("done\n", encoding="utf-8")
-            log.info("One-time guild command cleanup finished")
 
 
 def main() -> None:
