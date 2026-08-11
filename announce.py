@@ -27,9 +27,8 @@ def incomplete_tasks_for_user(guild: dict, user_id: int) -> list[dict]:
 async def send_no_outstanding_announce(channel: discord.abc.Messageable) -> None:
     try:
         gif = await fetch_random_klipy_gif(NO_OUTSTANDING_GIF_QUERY)
-        embed = discord.Embed(title=gif["title"])
+        embed = discord.Embed()
         embed.set_image(url=gif["url"])
-        embed.set_footer(text="Klipy")
         await channel.send(content=NO_OUTSTANDING_TEXT, embed=embed)
     except Exception as e:
         log.warning("Klipy GIF unavailable for no-outstanding announce: %s", e)
