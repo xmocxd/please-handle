@@ -170,13 +170,14 @@ async def handle_recent_purged(interaction: discord.Interaction) -> None:
     await interaction.response.send_message("**Recently purged:**\n" + "\n".join(lines))
 
 
-test_group = app_commands.Group(
+handle_test_group = app_commands.Group(
     name="test",
-    description="Privileged test helpers for please-handle",
+    description="Privileged test helpers",
+    parent=handle_group,
 )
 
 
-@test_group.command(
+@handle_test_group.command(
     name="no-tasks-announce",
     description="Post the no-outstanding-tasks announce message in this channel",
 )
@@ -202,4 +203,3 @@ async def test_no_tasks_announce(interaction: discord.Interaction) -> None:
 
 async def setup_handle_commands(tree: app_commands.CommandTree) -> None:
     tree.add_command(handle_group)
-    tree.add_command(test_group)
