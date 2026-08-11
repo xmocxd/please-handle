@@ -8,12 +8,14 @@ from discord.ext import commands
 
 from commands_handle import setup_handle_commands
 from commands_tasks import setup_task_commands
-from config import DISCORD_TOKEN, GUILD_ID
+from config import DATA_DIR, DISCORD_TOKEN
 from scheduler import AnnounceScheduler
 from views import DYNAMIC_ITEMS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("please-handle")
+
+_GUILD_CMD_CLEANUP_FLAG = DATA_DIR / ".guild_commands_cleared"
 
 
 class PleaseHandleBot(commands.Bot):
@@ -26,24 +28,20 @@ class PleaseHandleBot(commands.Bot):
         self.add_dynamic_items(*DYNAMIC_ITEMS)
         await setup_task_commands(self.tree)
         await setup_handle_commands(self.tree)
-
-        if GUILD_ID is not None:
-            guild = discord.Object(id=GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
-            log.info("Synced %s command(s) to guild %s (instant)", len(synced), GUILD_ID)
-        else:
-            synced = await self.tree.sync()
-            log.info(
-                "Synced %s global command(s) — may take up to ~1h to appear; "
-                "set GUILD_ID in .env for instant sync",
-                len(synced),
-            )
-
+        synced = await self.tree.sync()
+        log.info("Synced %s application command(s)", len(synced))
         self.announce_scheduler.start()
 
     async def on_ready(self) -> None:
         log.info("Logged in as %s (%s)", self.user, self.user.id if self.user else "?")
+        if not _GUILD_CMD_CLEANUP_FLAG.exists():
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            for guild in self.guilds:
+                # Empty guild sync removes leftover guild-scoped commands (duplicates)
+                await self.tree.sync(guild=guild)
+                log.info("Cleared guild-scoped commands for %s (%s)", guild.name, guild.id)
+            _GUILD_CMD_CLEANUP_FLAG.write_text("done\n", encoding="utf-8")
+            log.info("One-time guild command cleanup finished")
 
 
 def main() -> None:

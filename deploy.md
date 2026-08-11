@@ -22,10 +22,8 @@ python3 -m venv .venv
 ```bash
 # config
 cp .env.example .env
-nano .env   # DISCORD_TOKEN, GUILD_ID (server ID — instant slash sync), PRIVILEGED_USERS
+nano .env   # set DISCORD_TOKEN and PRIVILEGED_USERS (comma-separated Discord user IDs)
 ```
-
-Enable Developer Mode in Discord → right-click server → Copy Server ID → paste as `GUILD_ID`.
 
 ## Run
 
@@ -64,9 +62,5 @@ sudo systemctl enable --now please-handle
 
 ## After start
 
-1. Confirm startup log shows `Synced N command(s)` (with guild ID if set)
-2. In Discord try `/tasklist` (not `/taskslist`)
-3. `/handle enable` in the channel that should get scheduled announces
-4. Optional: `/handle schedule`, `/handle timezone`, `/handle settings`
-
-If `/` shows no bot commands: re-invite with both `bot` and `applications.commands` scopes, set `GUILD_ID`, restart.
+1. In Discord: `/handle enable` in the channel that should get scheduled announces
+2. Optional: `/handle schedule`, `/handle timezone`, `/handle settings`

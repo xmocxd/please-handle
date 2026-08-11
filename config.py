@@ -13,10 +13,6 @@ STATE_PATH = DATA_DIR / "state.json"
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
 
-# Optional: set to your server ID for instant slash-command sync (global sync can take ~1h)
-_raw_guild = os.getenv("GUILD_ID", "").strip()
-GUILD_ID: int | None = int(_raw_guild) if _raw_guild else None
-
 _raw_priv = os.getenv("PRIVILEGED_USERS", "")
 PRIVILEGED_USERS: set[int] = set()
 for part in _raw_priv.split(","):
