@@ -70,7 +70,7 @@ def _assignee_heading(user_id: int, member: discord.Member | None) -> discord.ui
         name = f"User {user_id}"
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
     return discord.ui.Section(
-        f"## {name}'s Tasks",
+        f"### {name}'s Tasks",
         accessory=discord.ui.Thumbnail(avatar_url, description=name),
     )
 
@@ -99,14 +99,15 @@ async def build_public_tasklist_view(
     state = load_state()
     guild = get_guild(state, guild_id)
     view = discord.ui.LayoutView(timeout=None)
-    view.add_item(discord.ui.TextDisplay("# Tasks"))
+    view.add_item(discord.ui.TextDisplay("## Tasks"))
+    view.add_item(discord.ui.TextDisplay("Please Handle"))
 
     budget = MAX_LAYOUT_COMPONENTS - 5  # footer + new-task + truncation headroom
     truncated = False
 
     # --- Unassigned ---
     unassigned = svc.unassigned_tasks(guild)
-    un_items: list[discord.ui.Item] = [discord.ui.TextDisplay("## Unassigned")]
+    un_items: list[discord.ui.Item] = [discord.ui.TextDisplay("### Unassigned")]
     if not unassigned:
         un_items.append(discord.ui.TextDisplay("_None_"))
     else:
@@ -169,7 +170,6 @@ async def build_public_tasklist_view(
     new_row = discord.ui.ActionRow()
     new_row.add_item(NewTaskButton())
     view.add_item(new_row)
-    view.add_item(discord.ui.TextDisplay("Please Handle"))
     return view
 
 

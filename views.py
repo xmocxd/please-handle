@@ -126,7 +126,7 @@ class PickupButton(
         super().__init__(
             discord.ui.Button(
                 label="Pick Up",
-                emoji="📥",
+                emoji="📤",
                 style=discord.ButtonStyle.primary,
                 custom_id=f"ph:pickup:{task_id}",
             )
@@ -170,7 +170,7 @@ class DropButton(
         super().__init__(
             discord.ui.Button(
                 label="Drop",
-                emoji="📤",
+                emoji="📥",
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"ph:drop:{source}:{task_id}",
             )
