@@ -191,10 +191,7 @@ async def build_assignee_view(
             continue
         if task.get("completed"):
             task_items.append(
-                _task_section(
-                    task["id"],
-                    f"{i + 1}. ✅ {task['description']}",
-                )
+                discord.ui.TextDisplay(f"{i + 1}. ~~{task['description']}~~ ✅")
             )
         else:
             task_items.append(
@@ -260,10 +257,7 @@ def build_mytasks_view(guild_id: int, user_id: int, *, offset: int = 0) -> disco
             continue
         if task.get("completed"):
             task_items.append(
-                _task_section(
-                    task["id"],
-                    f"{i + 1}. ✅ {task['description']}",
-                )
+                discord.ui.TextDisplay(f"{i + 1}. ~~{task['description']}~~ ✅")
             )
         else:
             task_items.append(
