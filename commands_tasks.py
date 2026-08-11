@@ -4,7 +4,13 @@ import discord
 from discord import app_commands
 
 import tasks_service as svc
-from render import build_mytasks_view, post_public_tasklist, refresh_public_lists
+from render import (
+    build_mytasks_view,
+    build_unassigned_view,
+    hide_public_lists,
+    post_public_tasklist,
+    refresh_public_lists,
+)
 from views import _publish_or_update_daily_digest, _silent_ack
 
 
@@ -32,7 +38,7 @@ async def _ack_and_refresh(
 
 
 async def setup_task_commands(tree: app_commands.CommandTree) -> None:
-    @tree.command(name="tasklist", description="Print the current public task list")
+    @tree.command(name="tasklist", description="Print the full public task list")
     async def tasklist(interaction: discord.Interaction) -> None:
         try:
             gid = _guild_id(interaction)
@@ -47,6 +53,38 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
             return
         await post_public_tasklist(
             channel, gid, discord_guild=interaction.guild, interaction=interaction
+        )
+
+    @tree.command(name="unassigned", description="Print only the unassigned task list")
+    async def unassigned(interaction: discord.Interaction) -> None:
+        try:
+            gid = _guild_id(interaction)
+        except svc.ServiceError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+            return
+        view = build_unassigned_view(gid, offset=0)
+        await interaction.response.send_message(view=view)
+        msg = await interaction.original_response()
+        svc.update_public_list_unassigned_msg(gid, msg.channel.id, msg.id)
+
+    @tree.command(name="hidelist", description="Delete the most recent public task list posts")
+    async def hidelist(interaction: discord.Interaction) -> None:
+        try:
+            gid = _guild_id(interaction)
+        except svc.ServiceError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+            return
+        tracked = svc.iter_public_list_message_ids(gid)
+        if not tracked:
+            await interaction.response.send_message(
+                "No tracked task list posts to hide.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        deleted = await hide_public_lists(interaction.client, gid)
+        await interaction.followup.send(
+            f"Hidden **{deleted}** task list message(s).",
+            ephemeral=True,
         )
 
     @tree.command(name="pickup", description="Pick up an unassigned task by number")

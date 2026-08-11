@@ -87,7 +87,7 @@ async def _resolve_member(
 
 
 def build_unassigned_view(guild_id: int, *, offset: int = 0) -> discord.ui.LayoutView:
-    from views import NewTaskButton, PickupButton, ShowMoreButton
+    from views import AssignButton, NewTaskButton, PickupButton, ShowMoreButton
 
     state = load_state()
     guild = get_guild(state, guild_id)
@@ -117,6 +117,7 @@ def build_unassigned_view(guild_id: int, *, offset: int = 0) -> discord.ui.Layou
             _task_section(
                 f"{i + 1}. {task['description']}",
                 PickupButton(task["id"]),
+                AssignButton(task["id"]),
             )
         )
 
@@ -308,8 +309,16 @@ async def post_public_tasklist(
     *,
     discord_guild: discord.Guild | None = None,
     interaction: discord.Interaction | None = None,
+    start_batch: bool = True,
 ) -> None:
-    """Post unassigned + each assignee as separate messages and remember their IDs."""
+    """Post unassigned + each assignee as separate messages and remember their IDs.
+
+    start_batch: when True (default), replaces the guild's tracked latest list batch.
+    Set False when posting additional channels in the same announce batch.
+    """
+    if start_batch:
+        svc.clear_public_list_msgs(guild_id)
+
     first = True
     unassigned_message_id: int | None = None
     assignee_message_ids: dict[int, int] = {}
@@ -351,6 +360,29 @@ async def post_public_tasklist(
             unassigned_message_id=unassigned_message_id,
             assignee_message_ids=assignee_message_ids,
         )
+
+
+async def hide_public_lists(client: discord.Client, guild_id: int) -> int:
+    """Delete all tracked latest public list messages. Returns how many were deleted."""
+    targets = svc.iter_public_list_message_ids(guild_id)
+    deleted = 0
+    for channel_id, message_id in targets:
+        channel = client.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await client.fetch_channel(channel_id)
+            except discord.HTTPException:
+                continue
+        if not isinstance(channel, discord.abc.Messageable):
+            continue
+        try:
+            msg = await channel.fetch_message(message_id)
+            await msg.delete()
+            deleted += 1
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            continue
+    svc.clear_public_list_msgs(guild_id)
+    return deleted
 
 
 async def refresh_public_lists(

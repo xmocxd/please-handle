@@ -215,6 +215,21 @@ def assign_task(guild_id: int, number: int, target_user_id: int) -> dict[str, An
     return task
 
 
+def assign_task_by_id(guild_id: int, task_id: str, target_user_id: int) -> dict[str, Any]:
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    task = get_task_by_id(guild, task_id)
+    if task is None:
+        raise ServiceError("Task not found.")
+    if task.get("assignee_id") is not None:
+        raise ServiceError("That task is already assigned.")
+    if task.get("completed"):
+        raise ServiceError("That task is already completed.")
+    task["assignee_id"] = target_user_id
+    save_state(state)
+    return task
+
+
 def unassign_task(guild_id: int, target_user_id: int, number: int) -> dict[str, Any]:
     state = load_state()
     guild = get_guild(state, guild_id)
@@ -302,7 +317,7 @@ def record_public_list(
     unassigned_message_id: int,
     assignee_message_ids: dict[int, int],
 ) -> None:
-    """Remember the latest public list messages posted in a channel."""
+    """Record list messages for a channel in the guild's latest public list batch."""
     state = load_state()
     guild = get_guild(state, guild_id)
     guild.setdefault("public_list_msgs", {})[str(channel_id)] = {
@@ -312,10 +327,35 @@ def record_public_list(
     save_state(state)
 
 
+def clear_public_list_msgs(guild_id: int) -> None:
+    """Clear tracked latest list posts (does not delete Discord messages)."""
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    guild["public_list_msgs"] = {}
+    save_state(state)
+
+
 def get_public_list_msgs(guild_id: int) -> dict[str, Any]:
     state = load_state()
     guild = get_guild(state, guild_id)
     return dict(guild.get("public_list_msgs") or {})
+
+
+def iter_public_list_message_ids(guild_id: int) -> list[tuple[int, int]]:
+    """Return [(channel_id, message_id), ...] for all tracked list posts."""
+    out: list[tuple[int, int]] = []
+    for channel_key, entry in get_public_list_msgs(guild_id).items():
+        try:
+            channel_id = int(channel_key)
+        except ValueError:
+            continue
+        mid = entry.get("unassigned_message_id")
+        if mid:
+            out.append((channel_id, int(mid)))
+        for _uid, amiddle in (entry.get("assignees") or {}).items():
+            if amiddle:
+                out.append((channel_id, int(amiddle)))
+    return out
 
 
 def update_public_list_assignee_msg(
@@ -328,6 +368,19 @@ def update_public_list_assignee_msg(
         {"unassigned_message_id": None, "assignees": {}},
     )
     channel.setdefault("assignees", {})[str(user_id)] = message_id
+    save_state(state)
+
+
+def update_public_list_unassigned_msg(
+    guild_id: int, channel_id: int, message_id: int
+) -> None:
+    state = load_state()
+    guild = get_guild(state, guild_id)
+    channel = guild.setdefault("public_list_msgs", {}).setdefault(
+        str(channel_id),
+        {"unassigned_message_id": None, "assignees": {}},
+    )
+    channel["unassigned_message_id"] = message_id
     save_state(state)
 
 

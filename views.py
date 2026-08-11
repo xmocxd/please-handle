@@ -176,6 +176,99 @@ class ShowMoreButton(
         await interaction.response.edit_message(view=view)
 
 
+class AssignUserSelect(discord.ui.UserSelect):
+    def __init__(self, task_id: str, guild_id: int) -> None:
+        super().__init__(
+            placeholder="Select a user to assign…",
+            min_values=1,
+            max_values=1,
+        )
+        self.task_id = task_id
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        user = self.values[0]
+        if user.bot:
+            await interaction.response.send_message(
+                "Cannot assign tasks to bots.", ephemeral=True
+            )
+            return
+        try:
+            task = svc.assign_task_by_id(self.guild_id, self.task_id, user.id)
+        except svc.ServiceError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+            return
+
+        await interaction.response.edit_message(
+            content=f"Assigned **{task['description']}** to {user.mention}.",
+            view=None,
+        )
+        await interaction.followup.send(
+            f"Assigned **{task['description']}** to {user.mention}.",
+        )
+        await refresh_public_lists(
+            interaction.client,
+            self.guild_id,
+            discord_guild=interaction.guild,
+            unassigned=True,
+            user_ids=[user.id],
+        )
+
+
+class AssignUserView(discord.ui.View):
+    def __init__(self, task_id: str, guild_id: int) -> None:
+        super().__init__(timeout=120)
+        self.add_item(AssignUserSelect(task_id, guild_id))
+
+
+class AssignButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"ph:assign:(?P<task_id>[0-9a-fA-F-]{36})",
+):
+    def __init__(self, task_id: str) -> None:
+        self.task_id = task_id
+        super().__init__(
+            discord.ui.Button(
+                label="Assign",
+                emoji="👤",
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"ph:assign:{task_id}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ):
+        return cls(match["task_id"])
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        try:
+            guild_id = await _require_guild(interaction)
+        except RuntimeError:
+            return
+        state = load_state()
+        guild = get_guild(state, guild_id)
+        task = svc.get_task_by_id(guild, self.task_id)
+        if task is None:
+            await interaction.response.send_message("Task not found.", ephemeral=True)
+            return
+        if task.get("assignee_id") is not None:
+            await interaction.response.send_message(
+                "That task is already assigned.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            f"Assign **{task['description']}** to:",
+            view=AssignUserView(self.task_id, guild_id),
+            ephemeral=True,
+        )
+
+
 class PickupButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"ph:pickup:(?P<task_id>[0-9a-fA-F-]{36})",
@@ -388,4 +481,11 @@ class MarkDoneButton(
             )
 
 
-DYNAMIC_ITEMS = (PickupButton, DropButton, MarkDoneButton, NewTaskButton, ShowMoreButton)
+DYNAMIC_ITEMS = (
+    PickupButton,
+    AssignButton,
+    DropButton,
+    MarkDoneButton,
+    NewTaskButton,
+    ShowMoreButton,
+)

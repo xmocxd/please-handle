@@ -47,6 +47,7 @@ class AnnounceScheduler:
             channel_ids = list(guild["settings"].get("enabled_channel_ids") or [])
             guild_obj = self.bot.get_guild(guild_id)
 
+            first_channel = True
             for channel_id in channel_ids:
                 channel = self.bot.get_channel(channel_id)
                 if channel is None:
@@ -59,8 +60,12 @@ class AnnounceScheduler:
                     continue
                 try:
                     await post_public_tasklist(
-                        channel, guild_id, discord_guild=guild_obj
+                        channel,
+                        guild_id,
+                        discord_guild=guild_obj,
+                        start_batch=first_channel,
                     )
+                    first_channel = False
                 except discord.HTTPException as e:
                     log.warning("Failed to announce in %s: %s", channel_id, e)
 
