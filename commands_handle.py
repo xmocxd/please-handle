@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 
 import tasks_service as svc
+from announce import send_no_outstanding_announce
 from config import PRIVILEGED_USERS
 from render import refresh_public_lists, settings_text
 from storage import get_guild, load_state
@@ -18,7 +19,7 @@ def _guild_id(interaction: discord.Interaction) -> int:
 def _check_privileged(interaction: discord.Interaction) -> None:
     owner_id = interaction.guild.owner_id if interaction.guild else None
     if not svc.is_privileged(interaction.user.id, owner_id, PRIVILEGED_USERS):
-        raise svc.ServiceError("You are not allowed to use /handle commands.")
+        raise svc.ServiceError("You are not allowed to use privileged commands.")
 
 
 handle_group = app_commands.Group(
@@ -169,5 +170,36 @@ async def handle_recent_purged(interaction: discord.Interaction) -> None:
     await interaction.response.send_message("**Recently purged:**\n" + "\n".join(lines))
 
 
+test_group = app_commands.Group(
+    name="test",
+    description="Privileged test helpers for please-handle",
+)
+
+
+@test_group.command(
+    name="no-tasks-announce",
+    description="Post the no-outstanding-tasks announce message in this channel",
+)
+async def test_no_tasks_announce(interaction: discord.Interaction) -> None:
+    try:
+        _check_privileged(interaction)
+        _guild_id(interaction)
+    except svc.ServiceError as e:
+        await interaction.response.send_message(str(e), ephemeral=True)
+        return
+
+    channel = interaction.channel
+    if channel is None or not isinstance(channel, discord.abc.Messageable):
+        await interaction.response.send_message(
+            "Cannot post an announce here.", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    await send_no_outstanding_announce(channel)
+    await interaction.followup.send("Posted no-tasks announce.", ephemeral=True)
+
+
 async def setup_handle_commands(tree: app_commands.CommandTree) -> None:
     tree.add_command(handle_group)
+    tree.add_command(test_group)

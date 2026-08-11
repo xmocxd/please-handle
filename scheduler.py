@@ -6,7 +6,7 @@ import discord
 from discord.ext import tasks
 
 import tasks_service as svc
-from render import post_public_tasklist
+from announce import run_announce_for_guild
 from storage import get_guild, load_state
 
 log = logging.getLogger("please-handle.scheduler")
@@ -37,40 +37,9 @@ class AnnounceScheduler:
             if not svc.should_announce(guild):
                 continue
 
-            purged = svc.purge_completed(guild_id)
-            if purged:
-                log.info("Guild %s auto-purged %s task(s)", guild_id, len(purged))
-
-            state = load_state()
-            guild = get_guild(state, guild_id)
-            date_str = svc.guild_now(guild).date().isoformat()
-            channel_ids = list(guild["settings"].get("enabled_channel_ids") or [])
-            guild_obj = self.bot.get_guild(guild_id)
-
-            first_channel = True
-            for channel_id in channel_ids:
-                channel = self.bot.get_channel(channel_id)
-                if channel is None:
-                    try:
-                        channel = await self.bot.fetch_channel(channel_id)
-                    except discord.HTTPException:
-                        log.warning("Could not fetch channel %s", channel_id)
-                        continue
-                if not isinstance(channel, discord.abc.Messageable):
-                    continue
-                try:
-                    await post_public_tasklist(
-                        channel,
-                        guild_id,
-                        discord_guild=guild_obj,
-                        start_batch=first_channel,
-                    )
-                    first_channel = False
-                except discord.HTTPException as e:
-                    log.warning("Failed to announce in %s: %s", channel_id, e)
-
-            svc.mark_announced(guild_id, date_str)
-            log.info("Announced task list for guild %s on %s", guild_id, date_str)
+            posted = await run_announce_for_guild(self.bot, guild_id, mark_announced=True)
+            if posted:
+                log.info("Announced outstanding tasks for guild %s (%s channel(s))", guild_id, posted)
 
     @loop.before_loop
     async def before_loop(self) -> None:

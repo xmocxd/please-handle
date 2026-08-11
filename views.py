@@ -176,6 +176,85 @@ class ShowMoreButton(
         await interaction.response.edit_message(view=view)
 
 
+class MyTasksCountButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"ph:mycount:(?P<user_id>[0-9]+):(?P<count>[0-9]+)",
+):
+    """Announce button: shows the assignee their /mytasks list."""
+
+    def __init__(self, user_id: int, count: int) -> None:
+        self.user_id = user_id
+        self.count = count
+        super().__init__(
+            discord.ui.Button(
+                label=str(count),
+                style=discord.ButtonStyle.primary,
+                custom_id=f"ph:mycount:{user_id}:{count}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ):
+        return cls(int(match["user_id"]), int(match["count"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        try:
+            guild_id = await _require_guild(interaction)
+        except RuntimeError:
+            return
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "Only the mentioned user can open this task list.",
+                ephemeral=True,
+            )
+            return
+        view = build_mytasks_view(guild_id, self.user_id, offset=0)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+
+class OpenTasksCountButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"ph:opencount:(?P<count>[0-9]+)",
+):
+    """Announce button: posts the /opentasks unassigned list."""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        super().__init__(
+            discord.ui.Button(
+                label=str(count),
+                style=discord.ButtonStyle.primary,
+                custom_id=f"ph:opencount:{count}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ):
+        return cls(int(match["count"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        try:
+            guild_id = await _require_guild(interaction)
+        except RuntimeError:
+            return
+        view = build_unassigned_view(guild_id, offset=0)
+        await interaction.response.send_message(view=view)
+        msg = await interaction.original_response()
+        svc.update_public_list_unassigned_msg(guild_id, msg.channel.id, msg.id)
+
+
 class DescriptionButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"ph:desc:(?P<task_id>[0-9a-fA-F-]{36})",
@@ -527,6 +606,8 @@ class MarkDoneButton(
 
 
 DYNAMIC_ITEMS = (
+    MyTasksCountButton,
+    OpenTasksCountButton,
     DescriptionButton,
     PickupButton,
     AssignButton,

@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 
 import tasks_service as svc
+from announce import run_announce_for_guild
 from render import (
     build_mytasks_view,
     build_unassigned_view,
@@ -11,6 +12,7 @@ from render import (
     post_public_tasklist,
     refresh_public_lists,
 )
+from storage import get_guild, load_state
 from views import _publish_or_update_daily_digest, _silent_ack
 
 
@@ -84,6 +86,41 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
         deleted = await hide_public_lists(interaction.client, gid)
         await interaction.followup.send(
             f"Hidden **{deleted}** task list message(s).",
+            ephemeral=True,
+        )
+
+    @tree.command(
+        name="announcetasks",
+        description="Force the scheduled outstanding-tasks announcement now",
+    )
+    async def announcetasks(interaction: discord.Interaction) -> None:
+        try:
+            gid = _guild_id(interaction)
+        except svc.ServiceError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+            return
+
+        state = load_state()
+        guild = get_guild(state, gid)
+        channel_ids = list(guild["settings"].get("enabled_channel_ids") or [])
+        if not channel_ids:
+            if interaction.channel_id is None:
+                await interaction.response.send_message(
+                    "No enabled announce channels. Use `/handle enable` first.",
+                    ephemeral=True,
+                )
+                return
+            channel_ids = [interaction.channel_id]
+
+        await interaction.response.defer(ephemeral=True)
+        posted = await run_announce_for_guild(
+            interaction.client,
+            gid,
+            channel_ids=channel_ids,
+            mark_announced=True,
+        )
+        await interaction.followup.send(
+            f"Announcement posted to **{posted}** channel(s).",
             ephemeral=True,
         )
 
