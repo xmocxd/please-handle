@@ -6,15 +6,18 @@ from typing import Iterable
 import discord
 
 import tasks_service as svc
+from klipy import fetch_random_klipy_gif
 from render import build_unassigned_view
 from storage import get_guild, load_state
 
 log = logging.getLogger("please-handle.announce")
 
-NO_OUTSTANDING_MESSAGE = (
-    "No tasks outstanding... handled :3\n"
+NO_OUTSTANDING_TEXT = "No tasks outstanding... handled :3"
+NO_OUTSTANDING_FALLBACK_GIF = (
     "https://tenor.com/view/acchi-kocchi-tsumiki-miniwa-spinning-anime-cute-gif-9172478568670808815"
 )
+NO_OUTSTANDING_MESSAGE = f"{NO_OUTSTANDING_TEXT}\n{NO_OUTSTANDING_FALLBACK_GIF}"
+NO_OUTSTANDING_GIF_QUERY = "acchi kocchi"
 
 
 def incomplete_tasks_for_user(guild: dict, user_id: int) -> list[dict]:
@@ -22,7 +25,15 @@ def incomplete_tasks_for_user(guild: dict, user_id: int) -> list[dict]:
 
 
 async def send_no_outstanding_announce(channel: discord.abc.Messageable) -> None:
-    await channel.send(NO_OUTSTANDING_MESSAGE)
+    try:
+        gif = await fetch_random_klipy_gif(NO_OUTSTANDING_GIF_QUERY)
+        embed = discord.Embed(title=gif["title"])
+        embed.set_image(url=gif["url"])
+        embed.set_footer(text="Klipy")
+        await channel.send(content=NO_OUTSTANDING_TEXT, embed=embed)
+    except Exception as e:
+        log.warning("Klipy GIF unavailable for no-outstanding announce: %s", e)
+        await channel.send(NO_OUTSTANDING_MESSAGE)
 
 
 def build_user_outstanding_view(user_id: int, count: int) -> discord.ui.LayoutView:

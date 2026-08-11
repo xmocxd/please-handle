@@ -12,6 +12,7 @@ DATA_DIR = ROOT / "data"
 STATE_PATH = DATA_DIR / "state.json"
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
+KLIPY_API_KEY = os.getenv("KLIPY_API_KEY", "").strip()
 
 _raw_priv = os.getenv("PRIVILEGED_USERS", "")
 PRIVILEGED_USERS: set[int] = set()
