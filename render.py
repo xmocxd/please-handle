@@ -61,17 +61,21 @@ def _task_section(text: str, *buttons: discord.ui.Item) -> discord.ui.Item:
     return row
 
 
-def _assignee_heading(user_id: int, member: discord.Member | None) -> discord.ui.Item:
-    """Heading with nick (no @) and profile icon."""
+def _avatar_url(user_id: int, member: discord.Member | None) -> str:
+    """Small avatar URL (Discord CDN size bucket)."""
     if member is not None:
-        name = member.display_name
-        avatar_url = member.display_avatar.url
-    else:
-        name = f"User {user_id}"
-        avatar_url = f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+        return member.display_avatar.with_size(32).url
+    return f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png?size=32"
+
+
+def _assignee_heading(user_id: int, member: discord.Member | None) -> discord.ui.Item:
+    """Heading with nick (no @) and compact profile icon."""
+    name = member.display_name if member is not None else f"User {user_id}"
+    # Section: text + thumbnail accessory (Discord always places the accessory
+    # opposite the text; 32px CDN asset keeps the icon compact).
     return discord.ui.Section(
         f"## {name}'s Tasks",
-        accessory=discord.ui.Thumbnail(avatar_url, description=name),
+        accessory=discord.ui.Thumbnail(_avatar_url(user_id, member), description=name),
     )
 
 
