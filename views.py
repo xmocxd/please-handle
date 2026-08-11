@@ -207,13 +207,16 @@ class PickupButton(
         except RuntimeError:
             return
         try:
-            svc.pickup_task_by_id(guild_id, interaction.user.id, self.task_id)
+            task = svc.pickup_task_by_id(guild_id, interaction.user.id, self.task_id)
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
 
         view = build_unassigned_view(guild_id, offset=0)
         await interaction.response.edit_message(view=view)
+        await interaction.followup.send(
+            f"{interaction.user.mention} picked up **{task['description']}**.",
+        )
         await refresh_public_lists(
             interaction.client,
             guild_id,
@@ -267,14 +270,18 @@ class DropButton(
             return
 
         try:
-            svc.drop_task_by_id(guild_id, interaction.user.id, self.task_id)
+            task = svc.drop_task_by_id(guild_id, interaction.user.id, self.task_id)
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
 
+        desc = task["description"]
         if self.source == "priv":
             view = build_mytasks_view(guild_id, interaction.user.id, offset=0)
             await interaction.response.edit_message(view=view)
+            await interaction.followup.send(
+                f"{interaction.user.mention} dropped **{desc}**.",
+            )
             await refresh_public_lists(
                 interaction.client,
                 guild_id,
@@ -290,6 +297,9 @@ class DropButton(
                 offset=0,
             )
             await interaction.response.edit_message(view=view)
+            await interaction.followup.send(
+                f"{interaction.user.mention} dropped **{desc}**.",
+            )
             await refresh_public_lists(
                 interaction.client,
                 guild_id,

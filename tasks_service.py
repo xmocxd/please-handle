@@ -235,7 +235,9 @@ def remove_task(guild_id: int, number: int) -> dict[str, Any]:
     return task
 
 
-def purge_completed(guild_id: int, *, age_days: Optional[int] = None) -> list[dict[str, Any]]:
+def purge_completed(
+    guild_id: int, *, age_days: Optional[int] = None, force: bool = False
+) -> list[dict[str, Any]]:
     state = load_state()
     guild = get_guild(state, guild_id)
     settings = guild["settings"]
@@ -248,21 +250,22 @@ def purge_completed(guild_id: int, *, age_days: Optional[int] = None) -> list[di
             kept.append(t)
             continue
         completed_at = t.get("completed_at")
-        if not completed_at:
-            kept.append(t)
-            continue
-        if _parse_iso(completed_at) < cutoff:
-            purged.append(
-                {
-                    "id": t["id"],
-                    "description": t["description"],
-                    "assignee_id": t.get("assignee_id"),
-                    "completed_at": completed_at,
-                    "purged_at": _iso(_now_utc()),
-                }
-            )
-        else:
-            kept.append(t)
+        if not force:
+            if not completed_at:
+                kept.append(t)
+                continue
+            if _parse_iso(completed_at) >= cutoff:
+                kept.append(t)
+                continue
+        purged.append(
+            {
+                "id": t["id"],
+                "description": t["description"],
+                "assignee_id": t.get("assignee_id"),
+                "completed_at": completed_at,
+                "purged_at": _iso(_now_utc()),
+            }
+        )
     guild["tasks"] = kept
     if purged:
         recent = guild.setdefault("recent_purged", [])

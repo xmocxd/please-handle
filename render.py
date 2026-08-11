@@ -95,7 +95,7 @@ def build_unassigned_view(guild_id: int, *, offset: int = 0) -> discord.ui.Layou
 
     view = discord.ui.LayoutView(timeout=None)
     if offset == 0:
-        view.add_item(discord.ui.TextDisplay("## Please Handle"))
+        view.add_item(discord.ui.TextDisplay("Please Handle"))
 
     body: list[discord.ui.Item] = [discord.ui.TextDisplay("### Unassigned Tasks")]
     if not tasks:

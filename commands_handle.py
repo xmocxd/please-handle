@@ -5,7 +5,7 @@ from discord import app_commands
 
 import tasks_service as svc
 from config import PRIVILEGED_USERS
-from render import settings_text
+from render import refresh_public_lists, settings_text
 from storage import get_guild, load_state
 
 
@@ -109,12 +109,12 @@ async def handle_purge(
     await interaction.response.send_message(f"Purge age set to **{days}** days.")
 
 
-@handle_group.command(name="force-purge", description="Purge completed tasks now")
+@handle_group.command(name="force-purge", description="Purge all completed tasks now (ignores age)")
 async def handle_force_purge(interaction: discord.Interaction) -> None:
     try:
         _check_privileged(interaction)
         gid = _guild_id(interaction)
-        purged = svc.purge_completed(gid)
+        purged = svc.purge_completed(gid, force=True)
     except svc.ServiceError as e:
         await interaction.response.send_message(str(e), ephemeral=True)
         return
@@ -125,6 +125,14 @@ async def handle_force_purge(interaction: discord.Interaction) -> None:
     extra = f"\n_…and {len(purged) - 20} more_" if len(purged) > 20 else ""
     await interaction.response.send_message(
         f"Purged **{len(purged)}** completed task(s):\n{lines}{extra}"
+    )
+    user_ids = sorted({p["assignee_id"] for p in purged if p.get("assignee_id")})
+    await refresh_public_lists(
+        interaction.client,
+        gid,
+        discord_guild=interaction.guild,
+        unassigned=True,
+        user_ids=user_ids,
     )
 
 

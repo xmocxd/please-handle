@@ -54,12 +54,19 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
     async def pickup(interaction: discord.Interaction, task_number: app_commands.Range[int, 1, 999]) -> None:
         try:
             gid = _guild_id(interaction)
-            svc.pickup_task(gid, interaction.user.id, task_number)
+            task = svc.pickup_task(gid, interaction.user.id, task_number)
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
-        await _ack_and_refresh(
-            interaction, gid, unassigned=True, user_ids=[interaction.user.id]
+        await interaction.response.send_message(
+            f"{interaction.user.mention} picked up **{task['description']}**."
+        )
+        await refresh_public_lists(
+            interaction.client,
+            gid,
+            discord_guild=interaction.guild,
+            unassigned=True,
+            user_ids=[interaction.user.id],
         )
 
     @tree.command(name="drop", description="Drop one of your assigned tasks back to unassigned")
@@ -67,12 +74,19 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
     async def drop(interaction: discord.Interaction, task_number: app_commands.Range[int, 1, 999]) -> None:
         try:
             gid = _guild_id(interaction)
-            svc.drop_task(gid, interaction.user.id, task_number)
+            task = svc.drop_task(gid, interaction.user.id, task_number)
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
-        await _ack_and_refresh(
-            interaction, gid, unassigned=True, user_ids=[interaction.user.id]
+        await interaction.response.send_message(
+            f"{interaction.user.mention} dropped **{task['description']}**."
+        )
+        await refresh_public_lists(
+            interaction.client,
+            gid,
+            discord_guild=interaction.guild,
+            unassigned=True,
+            user_ids=[interaction.user.id],
         )
 
     @tree.command(name="mytasks", description="Show your assigned tasks (only you can see this)")
@@ -129,12 +143,19 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
     ) -> None:
         try:
             gid = _guild_id(interaction)
-            svc.assign_task(gid, task_number, user.id)
+            task = svc.assign_task(gid, task_number, user.id)
         except svc.ServiceError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
-        await _ack_and_refresh(
-            interaction, gid, unassigned=True, user_ids=[user.id]
+        await interaction.response.send_message(
+            f"Assigned **{task['description']}** to {user.mention}."
+        )
+        await refresh_public_lists(
+            interaction.client,
+            gid,
+            discord_guild=interaction.guild,
+            unassigned=True,
+            user_ids=[user.id],
         )
 
     @tree.command(name="unassign", description="Unassign a task from a user's list")
