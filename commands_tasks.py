@@ -55,8 +55,8 @@ async def setup_task_commands(tree: app_commands.CommandTree) -> None:
             channel, gid, discord_guild=interaction.guild, interaction=interaction
         )
 
-    @tree.command(name="unassigned", description="Print only the unassigned task list")
-    async def unassigned(interaction: discord.Interaction) -> None:
+    @tree.command(name="opentasks", description="Print only the unassigned task list")
+    async def opentasks(interaction: discord.Interaction) -> None:
         try:
             gid = _guild_id(interaction)
         except svc.ServiceError as e:
